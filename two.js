@@ -23,5 +23,5 @@ function f_two(str) {
 
 var str, name = 'f_two'
 console.log(i = name+'("2 3 +")', eval(i))
-console.log(i = name+'f_one("2 3 + 4 7 % ^")', eval(i))
-console.log('f_one("1.12332 2 3 + 4 7 % ^ *")', eval(i))
+console.log(i = name+'("5 2 -")', eval(i))
+console.log(i = name+'("1.23 2 3 + 4 7 % ^ *")', eval(i))
