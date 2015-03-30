@@ -25,7 +25,7 @@ function f_two(str) {
 }
 
 
-var str, name = 'f_two'
+var i, name = 'f_two'
 console.log(i = name+'("2 3 +")', eval(i))                          // addition is still fine
 console.log(i = name+'("5 2 -")', eval(i))                          // subtraction is fine now too
 console.log(i = name+'("1.23 3 +")', eval(i))                       // decimals are fine
