@@ -19,20 +19,24 @@ function f_three(str) {
           var top=stack.pop(); stack.push(eval(stack.pop() + op + top)); return stack } })
     }
     
-    
-    // function addword(dict, program, pc) {
+    function addword(dict, program, pc) {
+      var stop = program.indexOf(';', pc)
+      var name = program[pc+1]
+      var sub = program.slice(pc+2, stop)
+      dict[name] = function(stack) {return ntrprt(sub, stack, dict)}
+      pc = stop
+      return [dict, program, pc]
+    }
     
     var pc = 0, max = program.length
     while(pc < max) {
       var word = program[pc]
       if(word == ':') {
-        var stop = program.indexOf(';', pc)
-        var name = program[pc+1]
-        var sub = program.slice(pc+2, stop)
-        dict[name] = function(stack) {return ntrprt(sub, stack, dict)}
-        pc = stop
+        out = addword(dict, program, pc)                  // use ES6 destructuring
+        dict = out[0]
+        program = out[1]
+        pc = out[2]
       }
-        // addword(dict, program, pc)                     // use destructuring
       else if(+word == word) 
         stack.push(word)                                  // numbers go on the stack
       else 
@@ -65,4 +69,6 @@ test("1 2 + 3 *", [9])                                    // interleaved operato
 test("3 4 drop dup *", [9])                               // keywords are still fine
 test("2 5 swap -", [3])                                   // hot swap
 
-test("3 : dd dup dup ; dd * *", [27])                                   // hot swap
+test("3 : dd dup dup ; dd * *", [27])                     // new words!
+test(": dd dup dup ; : ddd dd dup ; 3 ddd + + +", [12])   // new words in new words!
+test(": triple 3 * ; 7 triple", [21])                     // note that defs are global and flat (not nested)
