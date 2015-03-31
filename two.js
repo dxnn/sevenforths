@@ -2,7 +2,7 @@ function f_two(str) {
   return ntrprt(parse(str))
 
   function ntrprt(program) {
-    var ops  = ['+', '*', '-', '/', '%', '^', '|', '&', '||', '&&', '<', '>', '<<', '>>']
+    var ops  = ['+', '*', '-', '/', '%', '^', '|', '&', '||', '&&', '<', '>', '<<', '>>', '==']
     var doop = function(stack, word) {var top=stack.pop(); return stack.pop() + word + top}
     
     var dup  = function(stack) {return stack.concat(stack[stack.length-1])}

@@ -13,7 +13,7 @@ function f_three(str) {
       dict['drop'] = function(stack) {stack.pop(); return stack}
       dict['swap'] = function(stack) {stack.push(stack.pop(), stack.pop()); return stack}
 
-      var ops  = ['+', '*', '-', '/', '%', '^', '|', '&', '||', '&&', '<', '>', '<<', '>>']
+      var ops  = ['+', '*', '-', '/', '%', '^', '|', '&', '||', '&&', '<', '>', '<<', '>>', '==']
       ops.forEach(function(op) {
         dict[op] = function(stack) {
           var top=stack.pop(); stack.push(eval(stack.pop() + op + top)); return stack } })
