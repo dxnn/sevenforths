@@ -35,6 +35,7 @@ function f_four(str) {
     }
     
     function addword(name, sub, dict) {
+      if(typeof sub == 'string') sub = parse(sub)
       dict[name] = function(stack) {return ntrprt(sub, stack, dict)}
     }
     
@@ -57,7 +58,19 @@ function f_four(str) {
   }
 
   function parse(str) {
+    str = eatcomments(str)
     return str.split(/\s+/)
+  }
+  
+  function eatcomments(str) {
+    var arr = str.split('')
+    var mode = 'add'
+    return arr.reduce(function(acc, char) {
+      if(char == '(') mode = 'paren'                      // TODO: count depth
+      if(mode == 'add') acc += char
+      if(char == ')') mode = 'add'
+      return acc
+    }, "")
   }
 }
 
@@ -72,13 +85,10 @@ var test = function(str, res) {
   say(fun, out)
 }
 
-test("2 3 +", [5])                                        // addition is still fine
-test("5 2 -", [3])                                        // subtraction is fine now too
-test("1.23 3 +", [4.23])                                  // decimals are fine
-test("1 2 + 3 *", [9])                                    // interleaved operators are still fine
+test("5.2 2 -", [3.2])                                    // decimals and subtraction are still fine
+test("1 2 + 3 *", [9])                                    // interleaved operators are fine
 test("3 4 drop dup *", [9])                               // keywords are still fine
-test("2 5 swap -", [3])                                   // hot swap
-
 test("3 : dd dup dup ; dd * *", [27])                     // new words!
 test(": dd dup dup ; : ddd dd dup ; 3 ddd + + +", [12])   // new words in new words!
 test(": triple 3 * ; 7 triple", [21])                     // note that defs are global and flat (not nested)
+
