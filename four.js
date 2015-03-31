@@ -59,7 +59,7 @@ function f_four(str) {
 
   function parse(str) {
     str = eatcomments(str)
-    return str.split(/\s+/)
+    return str.trim().toLowerCase().split(/\s+/)
   }
   
   function eatcomments(str) {
@@ -80,7 +80,7 @@ var test = function(str, res) {
   var log   = console.log.bind(console)
   var name = 'f_four'
   var fun  = name+'("'+str+'")'
-  var out  = eval(fun)
+  var out  = window[name](str)
   var say  = JSON.stringify(out) == JSON.stringify(res) ? log : error
   say(fun, out)
 }
@@ -92,3 +92,17 @@ test("3 : dd dup dup ; dd * *", [27])                     // new words!
 test(": dd dup dup ; : ddd dd dup ; 3 ddd + + +", [12])   // new words in new words!
 test(": triple 3 * ; 7 triple", [21])                     // note that defs are global and flat (not nested)
 
+test("2 5 73 -16 2 roll", [2, 73, -16, 5])
+test("2 5 73 -16 3 pick", [2, 5, 73, -16, 2])
+test("2 5 73 -16 tuck", [2, 5, -16, 73, -16])
+test("5 2 ( asdf 123 ) -", [3])
+test(': SQUARED   ( a -- a*a )     DUP *  ;           \
+                                                      \
+              : SUM-OF-SQUARES   ( a b -- a*a+b*b )   \
+                   SQUARED            ( -- a b*b)     \
+                   SWAP               ( -- b*b a)     \
+                   SQUARED            ( -- b*b a*a)   \
+                   +                  ( -- b*b + a*a) \
+              ;                                       \
+5 7 SUM-OF-SQUARES                                    \
+', [74])
