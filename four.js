@@ -1,14 +1,47 @@
 // this one gets more base words
 // final logging/testing improvements
 
+// TODO: add branching/conditional/looping functions; more math functions; variadic tests?; 
+
+
 function f_four(str) {
+  var cstack = []  // control stack
+  var cdict =      // compile-time words -- note that these are not user-extensible
+  { ':' :
+        function(dict, program, pc) {
+          var stop = program.indexOf(';', pc)
+          var name = program[pc+1]
+          var sub = program.slice(pc+2, stop)
+          addword(name, sub, dict)
+          pc = stop
+          return [dict, program, pc]
+        }
+  , 'begin' :
+        function(dict, program, pc) {
+          cstack.push(pc)
+          program.splice(pc, 1) // remove the begin statement
+          return [dict, program, pc-1]
+        }
+  , 'until' :
+        function(dict, program, pc) {
+          var addr = cstack.pop()
+          program.splice(pc, 1, 'not', 'jump-if-true', addr) // note the lookahead for jump instruction
+          return [dict, program, pc-1]
+        }
+  }
+
+  // the function body
   return ntrprt(parse(str))
 
+  // helper functions
   function ntrprt(program, stack, dict) {
     stack = stack || []
     
-    if(!dict) {
+    if(!dict) { // default dict
       dict = {}
+
+      dict['not']   = function(stack) {stack.push(!stack.pop()); return stack}
+
       dict['pick']  = function(stack) {p=stack.pop(); stack.push(stack[stack.length-p-1]); return stack}
       dict['roll']  = function(stack) {p=stack.pop(); x=stack[stack.length-p-1]; stack.splice(stack.length-p-1, 1); stack.push(x); return stack}
 
@@ -25,29 +58,17 @@ function f_four(str) {
           var top=stack.pop(); stack.push(eval(stack.pop() + op + top)); return stack } })
     }
     
-    function eatword(dict, program, pc) {
-      var stop = program.indexOf(';', pc)
-      var name = program[pc+1]
-      var sub = program.slice(pc+2, stop)
-      addword(name, sub, dict)
-      pc = stop
-      return [dict, program, pc]
-    }
-    
-    function addword(name, sub, dict) {
-      if(typeof sub == 'string') sub = parse(sub)
-      dict[name] = function(stack) {return ntrprt(sub, stack, dict)}
-    }
-    
-    var pc = 0, max = program.length
-    while(pc < max) {
+    var pc = 0
+    while(pc < program.length) {
       var word = program[pc]
-      if(word == ':') {
-        out = eatword(dict, program, pc)                  // use ES6 destructuring
+      if(cdict[word]) {
+        out = cdict[word](dict, program, pc)              // use ES6 destructuring
         dict = out[0]
         program = out[1]
         pc = out[2]
       }
+      else if(word == 'jump-if-true')
+        pc = stack.pop() ? program[pc+1] - 1 : pc+1
       else if(+word == word) 
         stack.push(+word)                                 // numbers go on the stack
       else 
@@ -57,6 +78,11 @@ function f_four(str) {
     return stack
   }
 
+  function addword(name, sub, dict) {
+    if(typeof sub == 'string') sub = parse(sub)
+    dict[name] = function(stack) {return ntrprt(sub, stack, dict)}
+  }
+  
   function parse(str) {
     str = eatcomments(str)
     return str.trim().toLowerCase().split(/\s+/)
@@ -96,13 +122,23 @@ test("2 5 73 -16 2 roll", [2, 73, -16, 5])
 test("2 5 73 -16 3 pick", [2, 5, 73, -16, 2])
 test("2 5 73 -16 tuck", [2, 5, -16, 73, -16])
 test("5 2 ( asdf 123 ) -", [3])
-test(': SQUARED   ( a -- a*a )     DUP *  ;           \
-                                                      \
-              : SUM-OF-SQUARES   ( a b -- a*a+b*b )   \
-                   SQUARED            ( -- a b*b)     \
-                   SWAP               ( -- b*b a)     \
-                   SQUARED            ( -- b*b a*a)   \
-                   +                  ( -- b*b + a*a) \
-              ;                                       \
-5 7 SUM-OF-SQUARES                                    \
+test(': SQUARED   ( a -- a*a )     DUP *  ;   \
+                                              \
+      : SUM-OF-SQUARES   ( a b -- a*a+b*b )   \
+           SQUARED           ( -- a b*b)      \
+           SWAP              ( -- b*b a)      \
+           SQUARED           ( -- b*b a*a)    \
+           +                 ( -- b*b + a*a)  \
+      ;                                       \
+                                              \
+      5 7 SUM-OF-SQUARES                      \
 ', [74])
+test(': fact                             (  n --- n!  replace TOS with its factorial ) \
+        0 swap                           ( place a zero below n )                      \
+        begin dup 1 - dup  1 == until    ( make stack like 0 n ... 4 3 2 1 )           \
+        begin * over       0 == until    ( multiply till see the zero below answer )   \
+        swap drop                        ( delete the zero )                           \
+      ;                                                                                \
+                                                                                       \
+      5 fact                                                                           \
+', [120])
