@@ -28,6 +28,21 @@ function f_four(str) {
           program.splice(pc, 1, 'jump-if-true', addr) // note the lookahead for jump instruction
           return [dict, program, pc-1]
         }
+  , 'if' :
+        function(dict, program, pc) {
+          var nextthen = program.indexOf('then', pc) + 2 // +2 for the 'if' splice
+          var nextelse = program.indexOf('else', pc) + 2
+          if(nextelse == 1 || nextelse > nextthen)
+            nextelse = 0
+          nextthen += (nextelse ? 1 : 0)                 // +2 for the 'else' splice
+          
+          program.splice(pc, 1, 'not', 'jump-if-true', nextelse ? nextelse+2 : nextthen)
+          if(nextelse)
+            program.splice(nextelse, 1, 'jump', nextthen) 
+          program.splice(nextthen, 1)
+          
+          return [dict, program, pc-1]
+        }
   }
 
   // the function body
@@ -71,8 +86,10 @@ function f_four(str) {
         program = out[1]
         pc = out[2]
       }
+      else if(word == 'jump')
+        pc = program[pc+1] - 1                            // - 1 to account for ++
       else if(word == 'jump-if-true')
-        pc = stack.pop() ? program[pc+1] - 1 : pc+1
+        pc = stack.pop() ? program[pc+1] - 1 : pc+1       // + 1 to skip addr w/ ++
       else if(+word == word) 
         stack.push(+word)                                 // numbers go on the stack
       else 
@@ -154,3 +171,18 @@ test(': fact                             ( n --- n!  replace TOS with its factor
 test(': countdown begin dup 1 - dup while drop ; 5 countdown', [5, 4, 3, 2, 1])
 test('3 -4 abs max', [4])
 test('3 4 min', [3])
+
+test('0 if 4 else 9 then', [9])
+test('5 if 4 else 9 then', [4])
+test('1 if 9 then', [9])
+test('0 if 9 then', [])
+
+// via http://www.openbookproject.net/py4fun/forth/forth.html
+test(': fact2                                                           \
+          dup 1 > if         ( if 1 or 0 then leave on stack )          \
+            dup 1 - fact2    ( next number down - get its factorial )   \
+            * then           ( and multiply - leaving answer on stack ) \
+      ;                                                                 \
+                                                                        \
+      5 fact2                                                           \
+', [120])
