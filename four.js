@@ -1,9 +1,3 @@
-// this one gets more base words
-// final logging/testing improvements
-
-// TODO: add branching/conditional/looping functions; more math functions; variadic tests?; 
-
-
 function f_four(str) {
   var cstack = []  // control stack
   var cdict =      // compile-time words -- note that these are not user-extensible
@@ -28,6 +22,12 @@ function f_four(str) {
           program.splice(pc, 1, 'not', 'jump-if-true', addr) // note the lookahead for jump instruction
           return [dict, program, pc-1]
         }
+  , 'while' :
+        function(dict, program, pc) {
+          var addr = cstack.pop()
+          program.splice(pc, 1, 'jump-if-true', addr) // note the lookahead for jump instruction
+          return [dict, program, pc-1]
+        }
   }
 
   // the function body
@@ -40,7 +40,12 @@ function f_four(str) {
     if(!dict) { // default dict
       dict = {}
 
-      dict['not']   = function(stack) {stack.push(!stack.pop()); return stack}
+      dict['abs']  = function(stack) {stack.push(Math.abs(stack.pop())); return stack}
+      dict['max']  = function(stack) {stack.push(Math.max(stack.pop(), stack.pop())); return stack}
+      dict['min']  = function(stack) {stack.push(Math.min(stack.pop(), stack.pop())); return stack}
+      dict['not']  = function(stack) {stack.push(!stack.pop()); return stack}
+      dict['drop'] = function(stack) {stack.pop(); return stack}
+      dict['dump'] = function(stack) {console.log(stack); return stack}
 
       dict['pick']  = function(stack) {p=stack.pop(); stack.push(stack[stack.length-p-1]); return stack}
       dict['roll']  = function(stack) {p=stack.pop(); x=stack[stack.length-p-1]; stack.splice(stack.length-p-1, 1); stack.push(x); return stack}
@@ -50,7 +55,6 @@ function f_four(str) {
       addword('swap', '1 roll', dict)
       addword('rot',  '2 roll', dict)
       addword('tuck', 'swap 1 pick', dict)
-      dict['drop'] = function(stack) {stack.pop(); return stack}
 
       var ops  = ['+', '*', '-', '/', '%', '^', '|', '&', '||', '&&', '<', '>', '<<', '>>', '==']
       ops.forEach(function(op) {
@@ -122,23 +126,31 @@ test("2 5 73 -16 2 roll", [2, 73, -16, 5])
 test("2 5 73 -16 3 pick", [2, 5, 73, -16, 2])
 test("2 5 73 -16 tuck", [2, 5, -16, 73, -16])
 test("5 2 ( asdf 123 ) -", [3])
+
+// via http://galileo.phys.virginia.edu/classes/551.jvn.fall01/primer.htm
 test(': SQUARED   ( a -- a*a )     DUP *  ;   \
                                               \
       : SUM-OF-SQUARES   ( a b -- a*a+b*b )   \
-           SQUARED           ( -- a b*b)      \
-           SWAP              ( -- b*b a)      \
-           SQUARED           ( -- b*b a*a)    \
-           +                 ( -- b*b + a*a)  \
+          SQUARED          ( -- a b*b )       \
+          SWAP             ( -- b*b a )       \
+          SQUARED          ( -- b*b a*a )     \
+          +                ( -- b*b + a*a )   \
       ;                                       \
                                               \
       5 7 SUM-OF-SQUARES                      \
 ', [74])
-test(': fact                             (  n --- n!  replace TOS with its factorial ) \
-        0 swap                           ( place a zero below n )                      \
-        begin dup 1 - dup  1 == until    ( make stack like 0 n ... 4 3 2 1 )           \
-        begin * over       0 == until    ( multiply till see the zero below answer )   \
-        swap drop                        ( delete the zero )                           \
+
+// via http://www.openbookproject.net/py4fun/forth/forth.html
+test(': fact                             ( n --- n!  replace TOS with its factorial )  \
+          0 swap                           ( place a zero below n )                    \
+          begin dup 1 - dup  1 == until    ( make stack like 0 n ... 4 3 2 1 )         \
+          begin * over       0 == until    ( multiply till see the zero below answer ) \
+          swap drop                        ( delete the zero )                         \
       ;                                                                                \
                                                                                        \
       5 fact                                                                           \
 ', [120])
+
+test(': countdown begin dup 1 - dup while drop ; 5 countdown', [5, 4, 3, 2, 1])
+test('3 -4 abs max', [4])
+test('3 4 min', [3])
