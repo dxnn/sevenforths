@@ -6,6 +6,7 @@
 // can we disassemble from compiled code back in to forth? how much info would we need to retain to get well-factored forth back? 
 
 function f_five(str) {
+  var rstack = []                                         // return stack
   var cstack = []                                         // compile-time stack
   var cdict = cdict_builder()                             // compile-time dictionary
   var  dict =  dict_builder()                             // run-time dictionary
@@ -24,6 +25,8 @@ function f_five(str) {
         pc = program[pc+1] - 1                            // - 1 to account for ++
       else if(word == 'jump-if-true')
         pc = stack.pop() ? program[pc+1] - 1 : pc+1       // + 1 to skip addr w/ ++
+      else if(word == 'exit')                             // NOTE: stack, not rstack...
+        pc = stack.pop() - 1                              // - 1 to account for ++
       else if(+word == word) 
         stack.push(+word)                                 // numbers go on the stack
       else 
@@ -57,8 +60,10 @@ function f_five(str) {
         var out = cdict[word](dict, program, pc)          // use ES6 destructuring
         dict = out[0]                                     // global... :/
         program = out[1]
+        pc = out[2]
+      } else {
+        pc++
       }
-      pc++
     }
     
     return program
@@ -94,6 +99,10 @@ function f_five(str) {
     addword('rot',  '2 roll', dict)
     addword('tuck', 'swap 1 pick', dict)
 
+    dict['>r'] = function(stack) {rstack.push(stack[stack.length-1]); return stack} // global rstack... :/
+    dict['@r'] = function(stack) {stack.push(rstack[rstack.length-1]); return stack}
+    dict['r>'] = function(stack) {stack.push(rstack.pop()); return stack}
+
     var ops  = ['+', '*', '-', '/', '%', '^', '|', '&', '||', '&&', '<', '>', '<<', '>>', '==']
     ops.forEach(function(op) {
       dict[op] = function(stack) {
@@ -102,34 +111,43 @@ function f_five(str) {
     return dict
   }
   
-  function cdict_builder() {                                // compile-time words -- not user-extensible
+  function cdict_builder() {                              // compile-time words -- not user-extensible
     var cdict =      
       { ':' :
           function(dict, program, pc) {
-            var stop = program.indexOf(';', pc)
             var name = program[pc+1]
-            var sub = program.slice(pc+2, stop)
-            addword(name, sub, dict)
-            pc = stop
+            cstack.push([name, pc])
+            program.splice(pc, 2)                         // remove the : and name
             return [dict, program, pc]
+          }
+      , ';' :
+          function(dict, program, pc) {
+            var out = cstack.pop()                        // ES6 destructuring
+            var name = out[0]
+            var start = out[1]
+            var stop = pc
+            var sub = program.slice(start, stop)
+            program.splice(start, stop-start+1)
+            addword(name, sub, dict)
+            return [dict, program, start]
           }
       , 'begin' :
           function(dict, program, pc) {
             cstack.push(pc)
             program.splice(pc, 1)                         // remove the begin statement
-            return [dict, program, pc-1]
+            return [dict, program, pc]
           }
       , 'until' :
           function(dict, program, pc) {
             var addr = cstack.pop()
             program.splice(pc, 1, 'not', 'jump-if-true', addr) // note the lookahead for jump instruction
-            return [dict, program, pc-1]
+            return [dict, program, pc]
           }
       , 'while' :
           function(dict, program, pc) {
             var addr = cstack.pop()
             program.splice(pc, 1, 'jump-if-true', addr) // note the lookahead for jump instruction
-            return [dict, program, pc-1]
+            return [dict, program, pc]
           }
       , 'if' :
           function(dict, program, pc) {
@@ -144,7 +162,7 @@ function f_five(str) {
               program.splice(nextelse, 1, 'jump', nextthen) 
             program.splice(nextthen, 1)
       
-            return [dict, program, pc-1]
+            return [dict, program, pc]
           }
       }
       
