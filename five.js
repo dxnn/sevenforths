@@ -3,53 +3,11 @@
 // if we return zero for stack underflows and bound our pc jumps then we have no runtime errors either
 // commands to load to/from "memory"
 // full phase separation -- compile-time is distinct from run-time, and our compiled language is more like assembly
+// can we disassemble from compiled code back in to forth? how much info would we need to retain to get well-factored forth back? 
 
 function f_five(str) {
-  var cstack = []  // control stack
-  var cdict =      // compile-time words -- note that these are not user-extensible
-  { ':' :
-        function(dict, program, pc) {
-          var stop = program.indexOf(';', pc)
-          var name = program[pc+1]
-          var sub = program.slice(pc+2, stop)
-          addword(name, sub, dict)
-          pc = stop
-          return [dict, program, pc]
-        }
-  , 'begin' :
-        function(dict, program, pc) {
-          cstack.push(pc)
-          program.splice(pc, 1) // remove the begin statement
-          return [dict, program, pc-1]
-        }
-  , 'until' :
-        function(dict, program, pc) {
-          var addr = cstack.pop()
-          program.splice(pc, 1, 'not', 'jump-if-true', addr) // note the lookahead for jump instruction
-          return [dict, program, pc-1]
-        }
-  , 'while' :
-        function(dict, program, pc) {
-          var addr = cstack.pop()
-          program.splice(pc, 1, 'jump-if-true', addr) // note the lookahead for jump instruction
-          return [dict, program, pc-1]
-        }
-  , 'if' :
-        function(dict, program, pc) {
-          var nextthen = program.indexOf('then', pc) + 2 // +2 for the 'if' splice
-          var nextelse = program.indexOf('else', pc) + 2
-          if(nextelse == 1 || nextelse > nextthen)
-            nextelse = 0
-          nextthen += (nextelse ? 1 : 0)                 // +2 for the 'else' splice
-          
-          program.splice(pc, 1, 'not', 'jump-if-true', nextelse ? nextelse+2 : nextthen)
-          if(nextelse)
-            program.splice(nextelse, 1, 'jump', nextthen) 
-          program.splice(nextthen, 1)
-          
-          return [dict, program, pc-1]
-        }
-  }
+  var cstack = []                                         // compile-time stack
+  var cdict = cdict_builder()                             // compile-time dictionary
 
   // the function body
   return ntrprt(parse(str))
@@ -58,30 +16,7 @@ function f_five(str) {
   function ntrprt(program, stack, dict) {
     stack = stack || []
     
-    if(!dict) { // default dict
-      dict = {}
-
-      dict['abs']  = function(stack) {stack.push(Math.abs(stack.pop())); return stack}
-      dict['max']  = function(stack) {stack.push(Math.max(stack.pop(), stack.pop())); return stack}
-      dict['min']  = function(stack) {stack.push(Math.min(stack.pop(), stack.pop())); return stack}
-      dict['not']  = function(stack) {stack.push(!stack.pop()); return stack}
-      dict['drop'] = function(stack) {stack.pop(); return stack}
-      dict['dump'] = function(stack) {console.log(stack); return stack}
-
-      dict['pick']  = function(stack) {p=stack.pop(); stack.push(stack[stack.length-p-1]); return stack}
-      dict['roll']  = function(stack) {p=stack.pop(); x=stack[stack.length-p-1]; stack.splice(stack.length-p-1, 1); stack.push(x); return stack}
-
-      addword('dup',  '0 pick', dict)
-      addword('over', '1 pick', dict)
-      addword('swap', '1 roll', dict)
-      addword('rot',  '2 roll', dict)
-      addword('tuck', 'swap 1 pick', dict)
-
-      var ops  = ['+', '*', '-', '/', '%', '^', '|', '&', '||', '&&', '<', '>', '<<', '>>', '==']
-      ops.forEach(function(op) {
-        dict[op] = function(stack) {
-          var top=stack.pop(); stack.push(eval(stack.pop() + op + top)); return stack } })
-    }
+    if(!dict) dict = dict_builder()                       // run-time dictionary
     
     var pc = 0
     while(pc < program.length) {
@@ -124,6 +59,82 @@ function f_five(str) {
       if(char == ')') mode = 'add'
       return acc
     }, "")
+  }
+  
+  function dict_builder() {
+    var dict = {}
+
+    dict['abs']  = function(stack) {stack.push(Math.abs(stack.pop())); return stack}
+    dict['max']  = function(stack) {stack.push(Math.max(stack.pop(), stack.pop())); return stack}
+    dict['min']  = function(stack) {stack.push(Math.min(stack.pop(), stack.pop())); return stack}
+    dict['not']  = function(stack) {stack.push(!stack.pop()); return stack}
+    dict['drop'] = function(stack) {stack.pop(); return stack}
+    dict['dump'] = function(stack) {console.log(stack); return stack}
+
+    dict['pick']  = function(stack) {p=stack.pop(); stack.push(stack[stack.length-p-1]); return stack}
+    dict['roll']  = function(stack) {p=stack.pop(); x=stack[stack.length-p-1]; stack.splice(stack.length-p-1, 1); stack.push(x); return stack}
+
+    addword('dup',  '0 pick', dict)
+    addword('over', '1 pick', dict)
+    addword('swap', '1 roll', dict)
+    addword('rot',  '2 roll', dict)
+    addword('tuck', 'swap 1 pick', dict)
+
+    var ops  = ['+', '*', '-', '/', '%', '^', '|', '&', '||', '&&', '<', '>', '<<', '>>', '==']
+    ops.forEach(function(op) {
+      dict[op] = function(stack) {
+        var top=stack.pop(); stack.push(eval(stack.pop() + op + top)); return stack } })
+    
+    return dict
+  }
+  
+  function cdict_builder() { // compile-time words -- note that these are not user-extensible
+    var cdict =      
+      { ':' :
+            function(dict, program, pc) {
+              var stop = program.indexOf(';', pc)
+              var name = program[pc+1]
+              var sub = program.slice(pc+2, stop)
+              addword(name, sub, dict)
+              pc = stop
+              return [dict, program, pc]
+            }
+      , 'begin' :
+            function(dict, program, pc) {
+              cstack.push(pc)
+              program.splice(pc, 1) // remove the begin statement
+              return [dict, program, pc-1]
+            }
+      , 'until' :
+            function(dict, program, pc) {
+              var addr = cstack.pop()
+              program.splice(pc, 1, 'not', 'jump-if-true', addr) // note the lookahead for jump instruction
+              return [dict, program, pc-1]
+            }
+      , 'while' :
+            function(dict, program, pc) {
+              var addr = cstack.pop()
+              program.splice(pc, 1, 'jump-if-true', addr) // note the lookahead for jump instruction
+              return [dict, program, pc-1]
+            }
+      , 'if' :
+            function(dict, program, pc) {
+              var nextthen = program.indexOf('then', pc) + 2 // +2 for the 'if' splice
+              var nextelse = program.indexOf('else', pc) + 2
+              if(nextelse == 1 || nextelse > nextthen)
+                nextelse = 0
+              nextthen += (nextelse ? 1 : 0)                 // +2 for the 'else' splice
+              
+              program.splice(pc, 1, 'not', 'jump-if-true', nextelse ? nextelse+2 : nextthen)
+              if(nextelse)
+                program.splice(nextelse, 1, 'jump', nextthen) 
+              program.splice(nextthen, 1)
+        
+              return [dict, program, pc-1]
+            }
+      }
+      
+    return cdict
   }
 }
 
