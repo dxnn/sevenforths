@@ -5,71 +5,87 @@
 // commands to load to/from "memory"
 // can we disassemble from compiled code back in to forth? how much info would we need to retain to get well-factored forth back? 
 
-function f_five(str) {
+function f_five(err, out) {                               // create a new forth instance
+  var pc     = 0                                          // program counter
+  var codes  = [-0]                                       // compiled words
+  var memory = []                                         // heap space
+  var stack  = []                                         // param stack
   var rstack = []                                         // return stack
   var cstack = []                                         // compile-time stack
+  var  dict  = {}
   var cdict = cdict_builder()                             // compile-time dictionary
-  var  dict =  dict_builder()                             // run-time dictionary
+               dict_builder()                             // run-time dictionary
 
-  // the function body
-  return ntrprt(compile(str))
+  var cheating_flag = false                               // TODO: remove or rename
+  var branch_flag = false                                 // TODO: remove or rename
 
-  // helper functions
-  function ntrprt(program, stack) {
-    var pc = 0
-    stack  = stack || []
-    
-    while(pc < program.length) {
-      var word = program[pc]
-      if(word == 'jump')
-        pc = program[pc+1] - 1                            // - 1 to account for ++
-      else if(word == 'jump-if-true')
-        pc = stack.pop() ? program[pc+1] - 1 : pc+1       // + 1 to skip addr w/ ++
-      else if(word == 'exit')                             // NOTE: stack, not rstack...
-        pc = stack.pop() - 1                              // - 1 to account for ++
-      else if(+word == word) 
-        stack.push(+word)                                 // numbers go on the stack
-      else 
-        stack = dict[word](stack)                         // funs can be any arity
-      pc++
+  if(!err) {                                              // TODO: make this run-time overloadable
+    err = function(info) {
+      console.error(info)
     }
-    
-    return stack
+  }
+  
+  if(!out) {                                              // TODO: make this run-time overloadable
+    out = function(info) {
+      console.log(info)
+    }
+  }
+  
+  return ntrprt
+  
+  function ntrprt(str) {                                  // the forth interpreter
+    var words = chunk(str)
+    // words.forEach(eatword)
+    while(words.length) {
+      eatword(words.shift())
+      if(cheating_flag) {
+        cheating_flag = false
+        if(!cstack.length) {
+          words = rstack.concat(words)
+          rstack = []
+        }
+      }
+    }
   }
 
-  function addword(name, sub, dict) {
-    if(typeof sub == 'string') sub = parse(sub)
-    dict[name] = function(stack) {return ntrprt(sub, stack)}
+  function eatword(word) {
+    if(branch_flag) {
+      pc = pc+word
+      branch_flag = false
+    } else if(cdict[word])
+      cdict[word]()                                       // compile-time words take precedence
+    else if(cstack.length)
+      rstack.push(word)                                   // if we're compiling, save the word
+    else if(+word == word)
+      stack.push(+word||0)                                // add numbers; block NaNs
+    else if(dict[word]|0)
+      dosub(dict[word])                                   // user-defined words go to code
+    else if(dict[word])
+      dict[word]()                                        // funs can use stack / rstack / pc etc
+    else
+      err("I don't understand " + word)
   }
   
-  function compile(str) {                                 // str -> flat list of words
-    return ctime(parse(str))
+  function dosub(num) {
+    if(pc) rstack.push(pc+1)                              // return to the next instruction
+    pc = num
+    execute()
   }
   
-  function parse(str) {                                   // str -> fancy list of words
+  function execute() {
+    while(pc && pc < codes.length) {
+      var oldpc = pc
+      eatword(codes[pc])
+      if(pc && oldpc == pc) pc++                          // THINK: this will lead to subtle bugs
+    }
+  }
+  
+  function chunk(str) {                                   // str -> fancy list of words
     str = eatcomments(str)
     return str.trim().toLowerCase().split(/\s+/)
   }
   
-  function ctime(program) {                               // fancy words -> flat words
-    var pc = 0
-    
-    while(pc < program.length) {                          // because the program may grow
-      var word = program[pc]
-      if(cdict[word]) {
-        var out = cdict[word](dict, program, pc)          // use ES6 destructuring
-        dict = out[0]                                     // global... :/
-        program = out[1]
-        pc = out[2]
-      } else {
-        pc++
-      }
-    }
-    
-    return program
-  }
-  
-  function eatcomments(str) {                             // str -> str
+  function eatcomments(str) {                             // TODO: add ( and ) to cdict
     var arr = str.split('')
     var mode = 'add'
     return arr.reduce(function(acc, char) {
@@ -80,105 +96,143 @@ function f_five(str) {
     }, "")
   }
   
+  
   function dict_builder() {
-    var dict = {}
+    dict['drop'] = function() {stack.pop()}
+    dict['dump'] = function() {out(stack)}
+    dict['emit'] = function() {out(stack.pop())}
 
-    dict['abs']  = function(stack) {stack.push(Math.abs(stack.pop())); return stack}
-    dict['max']  = function(stack) {stack.push(Math.max(stack.pop(), stack.pop())); return stack}
-    dict['min']  = function(stack) {stack.push(Math.min(stack.pop(), stack.pop())); return stack}
-    dict['not']  = function(stack) {stack.push(!stack.pop()); return stack}
-    dict['drop'] = function(stack) {stack.pop(); return stack}
-    dict['dump'] = function(stack) {console.log(stack); return stack}
+    dict['pick'] = function() {p=stack.pop(); stack.push(stack[stack.length-p-1])}
+    dict['roll'] = function() {p=stack.pop(); x=stack[stack.length-p-1]; stack.splice(stack.length-p-1, 1); stack.push(x)}
 
-    dict['pick']  = function(stack) {p=stack.pop(); stack.push(stack[stack.length-p-1]); return stack}
-    dict['roll']  = function(stack) {p=stack.pop(); x=stack[stack.length-p-1]; stack.splice(stack.length-p-1, 1); stack.push(x); return stack}
+    dict['>r'  ] = function() {rstack.push(stack[stack.length-1])}
+    dict['@r'  ] = function() {stack.push(rstack[rstack.length-1])}
+    dict['r>'  ] = function() {stack.push(rstack.pop())}
 
-    addword('dup',  '0 pick', dict)
-    addword('over', '1 pick', dict)
-    addword('swap', '1 roll', dict)
-    addword('rot',  '2 roll', dict)
-    addword('tuck', 'swap 1 pick', dict)
+    dict['exit'] = function() {pc = rstack.pop()|0}       // THINK: is this right?
+    dict['branch'] = function() {pc = codes[pc+1]}        // THINK: is this right?
+    dict['0branch'] = function() {pc = stack.pop() ? pc+2 : codes[pc+1]}
 
-    dict['>r'] = function(stack) {rstack.push(stack[stack.length-1]); return stack} // global rstack... :/
-    dict['@r'] = function(stack) {stack.push(rstack[rstack.length-1]); return stack}
-    dict['r>'] = function(stack) {stack.push(rstack.pop()); return stack}
+    dict['abs' ] = function() {stack.push(Math.abs(stack.pop()))}
+    dict['max' ] = function() {stack.push(Math.max(stack.pop(), stack.pop()))}
+    dict['min' ] = function() {stack.push(Math.min(stack.pop(), stack.pop()))}
+    dict['not' ] = function() {stack.push(!stack.pop())}
 
     var ops  = ['+', '*', '-', '/', '%', '^', '|', '&', '||', '&&', '<', '>', '<<', '>>', '==']
     ops.forEach(function(op) {
-      dict[op] = function(stack) {
-        var top=stack.pop(); stack.push(eval(stack.pop() + op + top)); return stack } })
+      dict[op] = function() {
+        var top=stack.pop(); stack.push(eval(stack.pop() + op + top)) } })
     
-    return dict
+    ntrprt(': dup 0 pick ;')
+    ntrprt(': over 1 pick ;')
+    ntrprt(': swap 1 roll ;')
+    ntrprt(': rot 2 roll ;')
+    ntrprt(': tuck swap 1 pick ;')    
   }
   
   function cdict_builder() {                              // compile-time words -- not user-extensible
-    var cdict =      
-      { ':' :
-          function(dict, program, pc) {
-            var name = program[pc+1]
-            cstack.push([name, pc])
-            program.splice(pc, 2)                         // remove the : and name
-            return [dict, program, pc]
+    var cdict =                                           // at compile-time rstack is empty, so it
+      { ':' :                                             // collects words for us
+          function() {
+            cstack.push('colon')
           }
       , ';' :
-          function(dict, program, pc) {
-            var out = cstack.pop()                        // ES6 destructuring
-            var name = out[0]
-            var start = out[1]
-            var stop = pc
-            var sub = program.slice(start, stop)
-            program.splice(start, stop-start+1)
-            addword(name, sub, dict)
-            return [dict, program, start]
+          function() {
+            var label = cstack.pop()
+            if(label != 'colon')
+              return err('DANGER: unmatched ;')
+            
+            var name = rstack.shift()
+            dict[name] = codes.length
+            codes = codes.concat(uglyfix(rstack), 'exit')
+            rstack = []
           }
       , 'begin' :
-          function(dict, program, pc) {
-            cstack.push(pc)
-            program.splice(pc, 1)                         // remove the begin statement
-            return [dict, program, pc]
+          function() {
+            cstack.push(['begin', rstack.length])
           }
       , 'until' :
-          function(dict, program, pc) {
-            var addr = cstack.pop()
-            program.splice(pc, 1, 'not', 'jump-if-true', addr) // note the lookahead for jump instruction
-            return [dict, program, pc]
+          function() {
+            rstack.push('not')
+            cdict['while']('until')
           }
       , 'while' :
-          function(dict, program, pc) {
-            var addr = cstack.pop()
-            program.splice(pc, 1, 'jump-if-true', addr) // note the lookahead for jump instruction
-            return [dict, program, pc]
+          function(from) {
+            var out = cstack.pop()                        // TODO: ES6 destructuring
+            var label = out[0]
+            var addr = out[1]
+            if(label != 'begin')
+              return err('DANGER: unmatched ' + (from||'while'))
+
+            rstack.push('not', '0branch', addr)           // note the lookahead for jump instruction
+            cheating_flag = true
           }
       , 'if' :
-          function(dict, program, pc) {
-            var nextthen = program.indexOf('then', pc) + 2 // +2 for the 'if' splice
-            var nextelse = program.indexOf('else', pc) + 2
-            if(nextelse == 1 || nextelse > nextthen)
-              nextelse = 0
-            nextthen += (nextelse ? 1 : 0)                 // +2 for the 'else' splice
-            
-            program.splice(pc, 1, 'not', 'jump-if-true', nextelse ? nextelse+2 : nextthen)
-            if(nextelse)
-              program.splice(nextelse, 1, 'jump', nextthen) 
-            program.splice(nextthen, 1)
-      
-            return [dict, program, pc]
+          function() {
+            rstack.push('0branch', 0)                     // 0 is a placeholder address
+            cstack.push(['if', rstack.length-1])          // note the placeholder address pointer
           }
+      , 'else' :
+          function() {
+            var out = cstack.pop()                        // TODO: ES6 destructuring
+            var label = out[0]
+            var addr = out[1]
+            if(label != 'if')
+              return err('DANGER: unmatched if')
+            
+            rstack.push('branch', 0)                      // unconditional branch and new placeholder 
+            rstack[addr] = rstack.length                  // set the old placeholder address
+            cstack.push(['if', rstack.length-1])          // note the placeholder address pointer
+            cheating_flag = true
+          }
+      , 'then' :
+          function() {
+            var out = cstack.pop()                        // TODO: ES6 destructuring
+            var label = out[0]
+            var addr = out[1]
+            if(label != 'if')
+              return err('DANGER: unmatched if')
+            
+            rstack[addr] = rstack.length                  // set the placeholder address
+            cheating_flag = true
+          }
+            
+          //   var nextthen = program.indexOf('then', pc) + 2 // +2 for the 'if' splice
+          //   var nextelse = program.indexOf('else', pc) + 2
+          //   if(nextelse == 1 || nextelse > nextthen)
+          //     nextelse = 0
+          //   nextthen += (nextelse ? 1 : 0)                 // +2 for the 'else' splice
+          //
+          //   program.splice(pc, 1, '0branch', nextelse ? nextelse+2 : nextthen)
+          //   if(nextelse)
+          //     program.splice(nextelse, 1, 'branch', nextthen)
+          //   program.splice(nextthen, 1)
+          //
+          // }
       }
       
     return cdict
+  }
+  
+  function uglyfix(list) {
+    var offset = codes.length-1
+    return list.map(function(item) {
+      return +item===item ? item+offset : item
+    })
   }
 }
 
 
 var test = function(str, res) {
+  var output = 0
   var error = console.error.bind(console)
   var log   = console.log.bind(console)
+  var out   = function(info) {output = info}
   var name = 'f_five'
-  var fun  = name+'("'+str+'")'
-  var out  = window[name](str)
-  var say  = JSON.stringify(out) == JSON.stringify(res) ? log : error
-  say(fun, out)
+  var fun  = name+'()("'+str+'")'
+  window[name](error, out)(str+' dump')
+  var say  = JSON.stringify(output) == JSON.stringify(res) ? log : error
+  say(fun, output)
 }
 
 test("5.2 2 -", [3.2])                                    // decimals and subtraction are still fine
@@ -221,10 +275,10 @@ test(': countdown begin dup 1 - dup while drop ; 5 countdown', [5, 4, 3, 2, 1])
 test('3 -4 abs max', [4])
 test('3 4 min', [3])
 
-test('0 if 4 else 9 then', [9])
-test('5 if 4 else 9 then', [4])
-test('1 if 9 then', [9])
-test('0 if 9 then', [])
+test(': yarg 0 if 4 else 9 then ; yarg', [9])
+test(': yarg 5 if 4 else 9 then ; yarg', [4])
+test(': yarg 1 if 9 then ; yarg', [9])
+test(': yarg 0 if 9 then ; yarg', [])
 
 // via http://www.openbookproject.net/py4fun/forth/forth.html
 test(': fact2                                                           \
