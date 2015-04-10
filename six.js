@@ -1,9 +1,6 @@
-// full phase separation -- compile-time is distinct from run-time, and our compiled language is more like assembly
-// repl-able: keep track of state and iteratively compile new input strings (and execute as needed)
-// once we're past the compile-time program modifications the remaining program has no syntax errors (e.g. unbalanced compile-time matches). 
-// if we return zero for stack underflows and bound our pc jumps then we have no runtime errors other than type issues
+// the one where they get a type inferencer
 
-function f_five(err, out) {                               // create a new forth instance
+function f_six(err, out) {                                // create a new forth instance
   var pc     = 0                                          // program counter
   var codes  = [-0]                                       // compiled words
   var memory = []                                         // heap space
@@ -196,7 +193,7 @@ var test = function(str, res) {
   var error = console.error.bind(console)
   var log   = console.log.bind(console)
   var out   = function(info) {output = info}
-  var name = 'f_five'
+  var name = 'f_six'
   var fun  = name+'()("'+str+'")'
   window[name](error, out)(str+' dump')
   var say  = JSON.stringify(output) == JSON.stringify(res) ? log : error
