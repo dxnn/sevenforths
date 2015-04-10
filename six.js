@@ -1,28 +1,24 @@
 // the one where they get a type inferencer
 
 function f_six(err, out) {                                // create a new forth instance
+  err = err || default_err                                // TODO: ES6 defaults, make overloadable
+  out = out || default_out                                // TODO: ES6 defaults, make overloadable
+  
   var pc     = 0                                          // program counter
-  var codes  = [-0]                                       // compiled words
+  var codes  = [-0]                                       // compiled words, 1-indexed for comfort
   var memory = []                                         // heap space
   var  stack = []                                         // param stack
   var rstack = []                                         // return stack
   var cstack = []                                         // compile-time stack
-  var   dict = {}
+  var   dict = {}                                         // the main run-time dictionary
+  var  tdict = {}                                         // type signature dictionary
   var  cdict = cdict_builder()                            // compile-time dictionary
+               tdict_builder()                            // type sig dictionary
                 dict_builder()                            // run-time dictionary
 
-  if(!err) {                                              // TODO: make this run-time overloadable
-    err = function(info) {
-      console.error(info)
-    }
-  }
-  
-  if(!out) {                                              // TODO: make this run-time overloadable
-    out = function(info) {
-      console.log(info)
-    }
-  }
-  
+  function default_err(info) {console.error(info)}
+  function default_out(info) {console.log(info)}
+    
   return ntrprt
   
   function ntrprt(str) {                                  // the forth interpreter
@@ -31,7 +27,7 @@ function f_six(err, out) {                                // create a new forth 
       eatword(words.shift())
     }
   }
-
+  
   function eatword(word) {
     if(cdict[word])
       cdict[word]()                                       // compile-time words take precedence
@@ -124,8 +120,14 @@ function f_six(err, out) {                                // create a new forth 
               return err('DANGER: unmatched ;')
             
             var name = rstack.shift()
-            dict[name] = codes.length
-            codes = codes.concat(uglyfix(rstack), 'exit')
+              
+            var type = infer(rstack)
+            if(!type) return false
+
+            tdict[name] = type
+             dict[name] = codes.length
+
+            codes = codes.concat(uglyfix(rstack), 'exit') // TODO: change to offset
             rstack = []
           }
       , 'begin' :
@@ -179,11 +181,103 @@ function f_six(err, out) {                                // create a new forth 
     return cdict
   }
   
+  function tdict_builder() {
+    tdict['drop'] = [['any'], []]
+    tdict['dump'] = [[], []]
+    tdict['emit'] = [['any'], []]
+
+    // THINK: these two complicate matters... how can we improve this? a function for messing with the tqueue?
+    tdict['pick'] = [['nat'], ['any']]
+    tdict['roll'] = [['nat'], ['any']]
+
+    tdict['>r'  ] = [[], []]
+    tdict['@r'  ] = [[], ['any']]
+    tdict['r>'  ] = [[], ['any']]
+
+    tdict['exit'] = [[], []]
+    tdict['branch'] = [[], []]
+    tdict['0branch'] = [['any'], []]
+
+    tdict['abs' ] = [['float'], ['float']] // THINK: maybe a function here too, like int->nat
+    tdict['max' ] = [['float', 'float'], ['float']]
+    tdict['min' ] = [['float', 'float'], ['float']]
+    tdict['not' ] = [['any'], ['bool']]
+
+    var flops  = ['+', '*', '-', '/', '%', '^', '|', '&', '||', '&&', '<', '>', '<<', '>>', '==']
+    flops.forEach(function(flop) {
+      tdict[flop] = [['float', 'float'], ['float']] } )
+      
+    var nops  = ['|', '&', '<<', '>>']
+    nops.forEach(function(nop) {
+      tdict[nop] = [['float', 'float'], ['int']] } )
+    
+    var bops  = ['<', '>', '==']
+    bops.forEach(function(bop) {
+      tdict[bop] = [['float', 'float'], ['bool']] } )
+  }
+  
   function uglyfix(list) {
     var offset = codes.length-1
     return list.map(function(item) {
       return +item===item ? item+offset : item
     })
+  }
+  
+  function infer(words) {
+    // we need to ensure the words all typecheck properly, and create a type for this new word
+    var ins = []                                          // e.g. [bool, int] would pop a bool first
+    var outs = []                                         // e.g. [nat, char] would push a nat first
+    var tqueue = []                                       // type inference queue
+    var errors = []                                       // an error array
+    
+    words.forEach(function(word) {
+      var type  = gettype(word)                           // TODO: ES6 destructuring
+      var wins  = type[0]
+      var wouts = type[1]
+
+      wins.forEach(function(need) {
+        if(!tqueue.length)
+          return ins.push(need)                           // first in, first out
+        var have = tqueue.pop()
+        var err = typeerr(have, need)
+        if(err) errors.push(err)
+      })
+      
+      tqueue = tqueue.concat(wouts)
+    })
+    
+    if(errors.length) {
+      errors.forEach(err)
+      return false
+    }
+    
+    outs = tqueue
+    return [ins, outs]                                    // every word's type is a pair
+  }
+  
+  function gettype(word) {
+    if(tdict[word]) return tdict[word]                    // known word
+    if(+word != word) return [[], ['any']]                // not a number
+    word = +word
+    if(word === 0 || word === 1) return [[], ['bool']]
+    if(0 <= word && word <= 255) return [[], ['char']]
+    if(0 <= word && word === word|0) return [[], ['nat']]
+    if(word === word|0) return [[], ['int']]
+    return [[], ['float']]
+  }
+  
+  function typeerr(have, need) {
+    if(have == need)
+      return false
+    
+    var t1 = ['any', 'float', 'int', 'nat', 'char', 'bool']
+    var have_index = t1.indexOf(have)
+    var need_index = t1.indexOf(need)
+    
+    if(need_index < have_index)
+      return false
+      
+    return 'Type error: have ' + have + ' but needed ' + need
   }
 }
 
