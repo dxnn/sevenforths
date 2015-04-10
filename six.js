@@ -79,8 +79,8 @@ function f_six(err, out) {                                // create a new forth 
     dict['dump'] = function() {out(stack)}
     dict['emit'] = function() {out(stack.pop())}
 
-    dict['pick'] = function() {p=stack.pop(); stack.push(stack[stack.length-p-1])}
-    dict['roll'] = function() {p=stack.pop(); x=stack[stack.length-p-1]; stack.splice(stack.length-p-1, 1); stack.push(x)}
+    dict['pick'] = function() {var p=stack.pop(); stack.push(stack[stack.length-p-1])}
+    dict['roll'] = function() {var p=stack.pop(); var x=stack[stack.length-p-1]; stack.splice(stack.length-p-1, 1); stack.push(x)}
 
     dict['>r'  ] = function() {rstack.push(stack[stack.length-1])}
     dict['@r'  ] = function() {stack.push(rstack[rstack.length-1])}
@@ -186,10 +186,39 @@ function f_six(err, out) {                                // create a new forth 
     tdict['dump'] = [[], []]
     tdict['emit'] = [['any'], []]
 
-    // tdict['pick'] = [['nat'], ['any']]
-    // tdict['roll'] = [['nat'], ['any']]
-    tdict['pick'] = function(tstack) {p=tstack.pop(); tstack.push(tstack[tstack.length-p-1])}
-    tdict['roll'] = function(tstack) {p=tstack.pop(); x=tstack[tstack.length-p-1]; tstack.splice(tstack.length-p-1, 1); tstack.push(x)}
+    tdict['pick'] = function(tstack) {
+      if(!tstack.length)
+        return tdict['pick']
+
+      var p = tstack.pop()
+      if(!tstack.length)
+        return finish
+      
+      finish(tstack)
+      
+      function finish(tstack) {
+        tstack.push(tstack[tstack.length-p-1])            // THINK: this doesn't ensure not null
+      }
+    }
+    
+    tdict['roll'] = function(tstack) {
+      if(!tstack.length)
+        return tdict['roll']
+
+      var p = tstack.pop()
+      if(!tstack.length)
+        return finish
+      
+      finish(tstack)
+      
+      function finish(tstack) {
+        var x = tstack[tstack.length-p-1]
+        tstack.splice(tstack.length-p-1, 1)
+        tstack.push(x)
+      }
+    }
+    
+    // tdict['roll'] = function(tstack) {var p=tstack.pop(); x=tstack[tstack.length-p-1]; tstack.splice(tstack.length-p-1, 1); tstack.push(x)}
 
     tdict['>r'  ] = [[], []]
     tdict['@r'  ] = [[], ['any']]
@@ -232,17 +261,27 @@ function f_six(err, out) {                                // create a new forth 
     var errors = []                                       // an error array
     
     words.forEach(function(word) {
-      var type  = gettype(word)
-      if(typeof type == 'function')
-        return type(tstack)                               // tstack mods like pick & roll
-        
+      var type = gettype(word)
+      
+      if(typeof type == 'function') {                     // tstack mods like pick & roll
+        var output = type(tstack)
+        if(output)
+          tstack.push(output)                             // store partial funs, or regular types
+        return false
+      }
+      
       var wins  = type[0]
       var wouts = type[1]
 
       wins.forEach(function(need) {
         if(!tstack.length)
           return ins.push(need)                           // first in, first out
+          
         var have = tstack.pop()
+
+        if(typeof have == 'function')
+          return have(tstack)                             // eat partially applied functions
+
         var err = typeerr(have, need)
         if(err) errors.push(err)
       })
