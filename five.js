@@ -4,20 +4,18 @@
 // if we return zero for stack underflows and bound our pc jumps then we have no runtime errors either
 // commands to load to/from "memory"
 // can we disassemble from compiled code back in to forth? how much info would we need to retain to get well-factored forth back? 
+// TODO: get branching operations working for REPL entry (currently they only work for compiled words)
 
 function f_five(err, out) {                               // create a new forth instance
   var pc     = 0                                          // program counter
   var codes  = [-0]                                       // compiled words
   var memory = []                                         // heap space
-  var stack  = []                                         // param stack
+  var  stack = []                                         // param stack
   var rstack = []                                         // return stack
   var cstack = []                                         // compile-time stack
-  var  dict  = {}
-  var cdict = cdict_builder()                             // compile-time dictionary
-               dict_builder()                             // run-time dictionary
-
-  var cheating_flag = false                               // TODO: remove or rename
-  var branch_flag = false                                 // TODO: remove or rename
+  var   dict = {}
+  var  cdict = cdict_builder()                            // compile-time dictionary
+                dict_builder()                            // run-time dictionary
 
   if(!err) {                                              // TODO: make this run-time overloadable
     err = function(info) {
@@ -35,24 +33,13 @@ function f_five(err, out) {                               // create a new forth 
   
   function ntrprt(str) {                                  // the forth interpreter
     var words = chunk(str)
-    // words.forEach(eatword)
     while(words.length) {
       eatword(words.shift())
-      if(cheating_flag) {
-        cheating_flag = false
-        if(!cstack.length) {
-          words = rstack.concat(words)
-          rstack = []
-        }
-      }
     }
   }
 
   function eatword(word) {
-    if(branch_flag) {
-      pc = pc+word
-      branch_flag = false
-    } else if(cdict[word])
+    if(cdict[word])
       cdict[word]()                                       // compile-time words take precedence
     else if(cstack.length)
       rstack.push(word)                                   // if we're compiling, save the word
@@ -165,7 +152,6 @@ function f_five(err, out) {                               // create a new forth 
               return err('DANGER: unmatched ' + (from||'while'))
 
             rstack.push('not', '0branch', addr)           // note the lookahead for jump instruction
-            cheating_flag = true
           }
       , 'if' :
           function() {
@@ -183,7 +169,6 @@ function f_five(err, out) {                               // create a new forth 
             rstack.push('branch', 0)                      // unconditional branch and new placeholder 
             rstack[addr] = rstack.length                  // set the old placeholder address
             cstack.push(['if', rstack.length-1])          // note the placeholder address pointer
-            cheating_flag = true
           }
       , 'then' :
           function() {
@@ -194,21 +179,7 @@ function f_five(err, out) {                               // create a new forth 
               return err('DANGER: unmatched if')
             
             rstack[addr] = rstack.length                  // set the placeholder address
-            cheating_flag = true
           }
-            
-          //   var nextthen = program.indexOf('then', pc) + 2 // +2 for the 'if' splice
-          //   var nextelse = program.indexOf('else', pc) + 2
-          //   if(nextelse == 1 || nextelse > nextthen)
-          //     nextelse = 0
-          //   nextthen += (nextelse ? 1 : 0)                 // +2 for the 'else' splice
-          //
-          //   program.splice(pc, 1, '0branch', nextelse ? nextelse+2 : nextthen)
-          //   if(nextelse)
-          //     program.splice(nextelse, 1, 'branch', nextthen)
-          //   program.splice(nextthen, 1)
-          //
-          // }
       }
       
     return cdict
