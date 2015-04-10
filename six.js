@@ -186,9 +186,10 @@ function f_six(err, out) {                                // create a new forth 
     tdict['dump'] = [[], []]
     tdict['emit'] = [['any'], []]
 
-    // THINK: these two complicate matters... how can we improve this? a function for messing with the tqueue?
-    tdict['pick'] = [['nat'], ['any']]
-    tdict['roll'] = [['nat'], ['any']]
+    // tdict['pick'] = [['nat'], ['any']]
+    // tdict['roll'] = [['nat'], ['any']]
+    tdict['pick'] = function(tstack) {p=tstack.pop(); tstack.push(tstack[tstack.length-p-1])}
+    tdict['roll'] = function(tstack) {p=tstack.pop(); x=tstack[tstack.length-p-1]; tstack.splice(tstack.length-p-1, 1); tstack.push(x)}
 
     tdict['>r'  ] = [[], []]
     tdict['@r'  ] = [[], ['any']]
@@ -227,23 +228,26 @@ function f_six(err, out) {                                // create a new forth 
     // we need to ensure the words all typecheck properly, and create a type for this new word
     var ins = []                                          // e.g. [bool, int] would pop a bool first
     var outs = []                                         // e.g. [nat, char] would push a nat first
-    var tqueue = []                                       // type inference queue
+    var tstack = []                                       // type inference stack
     var errors = []                                       // an error array
     
     words.forEach(function(word) {
-      var type  = gettype(word)                           // TODO: ES6 destructuring
+      var type  = gettype(word)
+      if(typeof type == 'function')
+        return type(tstack)                               // tstack mods like pick & roll
+        
       var wins  = type[0]
       var wouts = type[1]
 
       wins.forEach(function(need) {
-        if(!tqueue.length)
+        if(!tstack.length)
           return ins.push(need)                           // first in, first out
-        var have = tqueue.pop()
+        var have = tstack.pop()
         var err = typeerr(have, need)
         if(err) errors.push(err)
       })
       
-      tqueue = tqueue.concat(wouts)
+      tstack = tstack.concat(wouts)
     })
     
     if(errors.length) {
@@ -251,25 +255,31 @@ function f_six(err, out) {                                // create a new forth 
       return false
     }
     
-    outs = tqueue
+    outs = tstack
     return [ins, outs]                                    // every word's type is a pair
   }
   
   function gettype(word) {
     if(tdict[word]) return tdict[word]                    // known word
     if(+word != word) return [[], ['any']]                // not a number
-    word = +word
-    if(word === 0 || word === 1) return [[], ['bool']]
-    if(0 <= word && word <= 255) return [[], ['char']]
-    if(0 <= word && word === word|0) return [[], ['nat']]
-    if(word === word|0) return [[], ['int']]
-    return [[], ['float']]
+    return [[], [+word]]                                  // keep the numbers
+  }
+  
+  function getnumtype(num) {
+    if (num === 0 || num === 1)     return 'bool'
+    if (0 <= num && num <= 255)     return 'char'
+    if (0 <= num && num === num|0)  return 'nat'
+    if (num === num|0)              return 'int'
+                                    return 'float'
   }
   
   function typeerr(have, need) {
     if(have == need)
       return false
     
+    if(+have === have)
+      have = getnumtype(have)
+      
     var t1 = ['any', 'float', 'int', 'nat', 'char', 'bool']
     var have_index = t1.indexOf(have)
     var need_index = t1.indexOf(need)
