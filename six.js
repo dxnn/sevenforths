@@ -186,35 +186,67 @@ function f_six(err, out) {                                // create a new forth 
     tdict['dump'] = [[], []]
     tdict['emit'] = [['any'], []]
 
-    tdict['pick'] = function(tstack) {
+    tdict['pick'] = [[pickfun], []]
+    
+    function pickfun(tstack) {
+      var items = []
+      
       if(!tstack.length)
         return tdict['pick']
 
       var p = tstack.pop()
-      if(!tstack.length)
-        return finish
+      return pf(tstack)
       
-      finish(tstack)
-      
-      function finish(tstack) {
-        tstack.push(tstack[tstack.length-p-1])            // THINK: this doesn't ensure not null
+      function pf(tstack) {
+        if(p < 0) {
+          // TODO: change inference loop to accept [[], []] from funs
+          // finish things: change ins(/outs?), add items to tstack, mod tstack, etc
+          var outs = [] // THINK: do we need output, or does tstack take care of that?
+          tstack = tstack.concat(items) // dir?
+          tstack.push(tstack[tstack.length-p-1])
+          return [[], []]
+        }
+        
+        if(!tstack.length) {
+          return [[pf], []]
+        }
+        
+        p--
+        items.push(tstack.pop())
+        pf(tstack)
       }
     }
     
-    tdict['roll'] = function(tstack) {
+    tdict['roll'] = [[rollfun], []]
+    
+    function rollfun(tstack) {
+      var items = []
+      
       if(!tstack.length)
         return tdict['roll']
 
       var p = tstack.pop()
-      if(!tstack.length)
-        return finish
-      
-      finish(tstack)
-      
-      function finish(tstack) {
-        var x = tstack[tstack.length-p-1]
-        tstack.splice(tstack.length-p-1, 1)
-        tstack.push(x)
+      return rf(tstack)
+
+      function rf(tstack) {
+        if(p < 0) {
+          // TODO: change inference loop to accept [[], []] from funs
+          // finish things: change ins(/outs?), add items to tstack, mod tstack, etc
+          var outs = [] // THINK: do we need output, or does tstack take care of that?
+          tstack = tstack.concat(items) // dir?
+          var x = tstack[tstack.length-p-1]
+          tstack.splice(tstack.length-p-1, 1)
+          tstack.push(x)
+          return [[], []]
+        }
+        
+        if(!tstack.length) {
+          return [[rf], []]
+        }
+        
+        p--
+        items.push(tstack.pop())
+        rf(tstack)
       }
     }
     
@@ -264,10 +296,11 @@ function f_six(err, out) {                                // create a new forth 
       var type = gettype(word)
       
       if(typeof type == 'function') {                     // tstack mods like pick & roll
-        var output = type(tstack)
-        if(output)
-          tstack.push(output)                             // store partial funs, or regular types
-        return false
+        type = type(tstack)
+        // var output = type(tstack)
+        // if(output)
+        //   tstack.push(output)                             // store partial funs, or regular types
+        // return false
       }
       
       var wins  = type[0]
